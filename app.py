@@ -1,58 +1,53 @@
 import streamlit as st
 import pdfplumber
+import re
 import numpy as np
+import matplotlib.pyplot as plt
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
+from collections import Counter
+from io import BytesIO
 
 # -----------------------------
 # PAGE CONFIG
 # -----------------------------
 st.set_page_config(
-    page_title="AI Resume Intelligence",
+    page_title="AI Resume Intelligence SaaS",
     page_icon="💼",
     layout="wide"
 )
 
 # -----------------------------
-# PREMIUM UI STYLE (CLEAN SAAS)
+# UI STYLE (STARTUP CLEAN DASHBOARD)
 # -----------------------------
 st.markdown("""
 <style>
 
 .stApp {
-    background: linear-gradient(120deg, #f8bbd0, #fce4ec, #f3e5f5);
+    background: linear-gradient(135deg, #f3e5f5, #fce4ec, #f8bbd0);
 }
 
-/* Title */
 h1 {
     text-align: center;
-    color: #6a1b9a;
+    color: #4a148c;
     font-weight: 900;
 }
 
-/* Cards */
+/* cards */
 .card {
     background: white;
-    padding: 20px;
+    padding: 18px;
     border-radius: 16px;
-    box-shadow: 0px 4px 20px rgba(0,0,0,0.1);
-    margin-bottom: 15px;
+    box-shadow: 0px 4px 18px rgba(0,0,0,0.08);
 }
 
-/* Metrics */
-[data-testid="metric-container"] {
-    background-color: white;
-    border-radius: 12px;
-    padding: 10px;
-    box-shadow: 0px 2px 10px rgba(0,0,0,0.08);
-}
-
-/* Buttons */
+/* buttons */
 .stButton>button {
     background: linear-gradient(90deg, #8e24aa, #ec407a);
     color: white;
     border-radius: 10px;
     font-size: 16px;
+    padding: 0.5rem 1rem;
 }
 
 </style>
@@ -70,21 +65,16 @@ model = load_model()
 # -----------------------------
 # HEADER
 # -----------------------------
-st.title("💼 AI Resume Intelligence Platform")
-st.write("Analyze Resume vs Job Description with ATS-level intelligence")
+st.title("💼 AI Resume Intelligence SaaS")
+st.write("Startup-grade Resume ATS + AI Career Analyzer")
 
 # -----------------------------
-# SIDEBAR
-# -----------------------------
-st.sidebar.header("⚙️ Controls")
-show_raw = st.sidebar.checkbox("Show Raw Text")
-show_keywords = st.sidebar.checkbox("Show Keywords")
-
-# -----------------------------
-# INPUT
+# INPUTS
 # -----------------------------
 uploaded_file = st.file_uploader("📄 Upload Resume (PDF)", type=["pdf"])
 job_description = st.text_area("🧾 Paste Job Description")
+
+run = st.button("🚀 Run AI Analysis")
 
 # -----------------------------
 # FUNCTIONS
@@ -97,84 +87,129 @@ def extract_text(pdf_file):
     return text
 
 def clean_words(text):
-    return set(text.lower().replace("\n", " ").split())
+    return re.findall(r'\b\w+\b', text.lower())
 
-def ats_score(resume_text, job_text):
-    resume_words = clean_words(resume_text)
-    job_words = clean_words(job_text)
+def categorize(words):
+    tech = {"python","java","sql","aws","docker","git","linux"}
+    ml = {"machine","learning","deep","neural","nlp","pandas","numpy","tensorflow","pytorch","sklearn"}
+    soft = {"communication","leadership","team","management"}
 
-    overlap = resume_words & job_words
-    missing = job_words - resume_words
+    counts = Counter()
 
-    skill_score = len(overlap) / (len(job_words) + 1)
-    gap_score = len(missing) / (len(job_words) + 1)
+    for w in words:
+        if w in tech:
+            counts["Tech"] += 1
+        elif w in ml:
+            counts["AI/ML"] += 1
+        elif w in soft:
+            counts["Soft"] += 1
 
-    return skill_score, gap_score, missing
+    return counts
+
+def job_predictor(text):
+    t = text.lower()
+    if "machine" in t or "ai" in t or "data" in t:
+        return "AI/ML Engineer"
+    elif "frontend" in t:
+        return "Frontend Developer"
+    elif "backend" in t:
+        return "Backend Developer"
+    return "Software Engineer"
 
 def ai_feedback(score):
     if score > 0.75:
-        return "🔥 Excellent ATS Match – Strong Hire Potential"
+        return "🔥 Strong ATS Profile (High Hiring Chance)"
     elif score > 0.5:
-        return "⚠️ Good Match – Improve Some Skills"
+        return "⚠️ Good Profile (Needs Optimization)"
     else:
-        return "❌ Weak Match – Resume Needs Optimization"
+        return "❌ Weak Profile (Major Improvements Needed)"
+
+def make_chart(skill_counts):
+    labels = list(skill_counts.keys())
+    values = list(skill_counts.values())
+
+    fig, ax = plt.subplots()
+    ax.pie(values, labels=labels, autopct='%1.1f%%')
+    ax.set_title("Skill Distribution")
+    return fig
 
 # -----------------------------
-# MAIN LOGIC
+# MAIN
 # -----------------------------
-if uploaded_file and job_description:
+if run and uploaded_file and job_description:
 
     resume_text = extract_text(uploaded_file)
 
-    # Embeddings
     resume_emb = model.encode(resume_text)
     job_emb = model.encode(job_description)
 
     semantic_score = cosine_similarity([resume_emb], [job_emb])[0][0]
 
-    skill_score, gap_score, missing_skills = ats_score(resume_text, job_description)
+    resume_words = set(clean_words(resume_text))
+    job_words = set(clean_words(job_description))
 
-    # FINAL SCORE (SMART WEIGHTING)
-    final_score = (0.6 * semantic_score) + (0.4 * skill_score)
+    overlap = resume_words & job_words
+    missing = job_words - resume_words
+
+    skill_score = len(overlap) / (len(job_words) + 1)
+
+    final_score = (0.65 * semantic_score) + (0.35 * skill_score)
+
+    predicted_role = job_predictor(job_description)
+    skill_counts = categorize(clean_words(resume_text))
 
     # -----------------------------
     # DASHBOARD
     # -----------------------------
     col1, col2, col3 = st.columns(3)
 
-    with col1:
-        st.metric("🤖 AI Match Score", f"{round(final_score*100,2)}%")
-
-    with col2:
-        st.metric("🧠 Semantic Score", f"{round(semantic_score*100,2)}%")
-
-    with col3:
-        st.metric("📊 ATS Skill Score", f"{round(skill_score*100,2)}%")
+    col1.metric("🤖 AI Match", f"{final_score*100:.2f}%")
+    col2.metric("🧠 Semantic", f"{semantic_score*100:.2f}%")
+    col3.metric("📊 ATS Score", f"{skill_score*100:.2f}%")
 
     st.progress(float(final_score))
 
-    st.markdown("## 💡 AI Feedback")
     st.success(ai_feedback(final_score))
+
+    st.info(f"🎯 Predicted Role: {predicted_role}")
 
     # -----------------------------
     # SKILL GAP
     # -----------------------------
-    st.markdown("## 📌 Missing Skills (AI Detected)")
-    st.write(list(missing_skills)[:25])
+    st.markdown("## 📌 Missing Skills")
+    st.write(list(missing)[:25])
 
     # -----------------------------
-    # RAW DATA (OPTIONAL)
+    # CHART
     # -----------------------------
-    if show_raw:
-        st.markdown("## 📄 Resume Text")
-        st.text(resume_text[:3000])
+    st.markdown("## 📊 Skill Breakdown")
+    st.pyplot(make_chart(skill_counts))
 
-    if show_keywords:
-        st.markdown("## 🔑 Keywords Extracted")
-        st.write(list(clean_words(resume_text))[:50])
+    # -----------------------------
+    # RAW TEXT
+    # -----------------------------
+    with st.expander("📄 View Resume Text"):
+        st.text(resume_text[:4000])
 
-# -----------------------------
-# EMPTY STATE
-# -----------------------------
+    # -----------------------------
+    # PDF REPORT GENERATOR (SIMPLE)
+    # -----------------------------
+    st.download_button(
+        label="📥 Download Report (Text)",
+        data=f"""
+AI Resume Report
+
+Match Score: {final_score*100:.2f}%
+Semantic Score: {semantic_score*100:.2f}%
+ATS Score: {skill_score*100:.2f}%
+
+Predicted Role: {predicted_role}
+
+Missing Skills:
+{list(missing)[:30]}
+""",
+        file_name="resume_report.txt"
+    )
+
 else:
-    st.info("Upload resume and paste job description to start analysis 🚀")
+    st.info("Upload resume and click RUN to generate AI analysis 🚀")
