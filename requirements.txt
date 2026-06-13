@@ -2,3 +2,4 @@ streamlit
 pdfplumber
 sentence-transformers
 scikit-learn
+numpy
